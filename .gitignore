@@ -1,3 +1,10 @@
+# IDEA / netbeans
+nbproject/*
+.idea/*
+
+# Data
+data/
+
 # Compiled class file
 *.class
 
