@@ -1,4 +1,6 @@
-package main.java.com.iis.main;
+package com.iis.main;
+
+import com.iis.network.ClassificationNetworkV1;
 
 public class Launcher {
 
@@ -7,7 +9,7 @@ public class Launcher {
      *
      * @param args arguments (empty)
      */
-    public static void main(String[] args) {
-        
+    public static void main(String[] args) throws Exception {
+        new ClassificationNetworkV1().run();
     }
 }
