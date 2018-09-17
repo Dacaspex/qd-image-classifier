@@ -10,6 +10,7 @@ public class Launcher {
      * @param args arguments (empty)
      */
     public static void main(String[] args) throws Exception {
-        new ClassificationNetworkV1().run();
+        NetworkGUI gui = new NetworkGUI();
+        javafx.application.Application.launch(NetworkGUI.class);
     }
 }

@@ -1,11 +1,13 @@
 package com.iis.network;
 
+import com.iis.main.CustomEventListener;
 import org.datavec.api.io.labels.ParentPathLabelGenerator;
 import org.datavec.api.split.FileSplit;
 import org.datavec.image.loader.NativeImageLoader;
 import org.datavec.image.recordreader.ImageRecordReader;
 import org.deeplearning4j.datasets.datavec.RecordReaderDataSetIterator;
 import org.deeplearning4j.eval.Evaluation;
+import org.deeplearning4j.nn.api.Model;
 import org.deeplearning4j.nn.api.OptimizationAlgorithm;
 import org.deeplearning4j.nn.conf.ConvolutionMode;
 import org.deeplearning4j.nn.conf.MultiLayerConfiguration;
@@ -43,7 +45,7 @@ public class ClassificationNetworkV1 {
     private static final int channels = 1;
 
     // Number of classes
-    private static final int numberOfClasses = 30;
+    private static final int numberOfClasses = 31;
 
     // Hyper parameters
     private static final int batchSize = 256;
@@ -93,7 +95,7 @@ public class ClassificationNetworkV1 {
                     ///////////
                     //Layer 1//
                     ///////////
-                    .layer(0, new ConvolutionLayer.Builder(new int[]{4, 4}, new int[]{1, 1}, new int[]{0, 0})
+                    .layer(0, new Convolution2D.Builder(new int[]{4, 4}, new int[]{1, 1}, new int[]{0, 0})
                             .convolutionMode(ConvolutionMode.Same)
                             .nIn(1)
                             .nOut(64)
@@ -108,7 +110,7 @@ public class ClassificationNetworkV1 {
                     ///////////
                     //Layer 2//
                     ///////////
-                    .layer(3, new ConvolutionLayer.Builder(new int[]{3, 3}, new int[]{1, 1}, new int[]{0, 0})
+                    .layer(3, new Convolution2D.Builder(new int[]{3, 3}, new int[]{1, 1}, new int[]{0, 0})
                             .convolutionMode(ConvolutionMode.Same)
                             .nOut(96)
                             .weightInit(WeightInit.XAVIER_UNIFORM)
@@ -122,7 +124,7 @@ public class ClassificationNetworkV1 {
                     ///////////
                     //Layer 3//
                     ///////////
-                    .layer(6, new ConvolutionLayer.Builder(new int[]{2, 2}, new int[]{1, 1}, new int[]{0, 0})
+                    .layer(6, new Convolution2D.Builder(new int[]{2, 2}, new int[]{1, 1}, new int[]{0, 0})
                             .convolutionMode(ConvolutionMode.Same)
                             .nOut(128)
                             .weightInit(WeightInit.XAVIER_UNIFORM)
@@ -169,13 +171,26 @@ public class ClassificationNetworkV1 {
         model.setIterationCount(1);
         model.init();
 
-        model.setListeners(new ScoreIterationListener(100));
+        model.setListeners(new CustomScoreIterationListener(100));
 
         log.info("*** Training model ***");
 
         for (int i = 0; i < epochs; i++) {
             model.fit(iterator);
             log.info("*** Epoch " + i + " Done ***");
+
+            Evaluation evaluation = new Evaluation(numberOfClasses);
+            ImageRecordReader recordReaderVal = new ImageRecordReader(height, width, channels, labelGenerator);
+            recordReaderVal.initialize(validation);
+            DataSetIterator testIterator = new RecordReaderDataSetIterator(recordReaderVal, batchSize, 1, numberOfClasses);
+            scaler.fit(testIterator);
+            testIterator.setPreProcessor(scaler);
+            while (testIterator.hasNext()) {
+                DataSet next = testIterator.next();
+                INDArray output = model.output(next.getFeatures());
+                evaluation.eval(next.getLabels(), output);
+            }
+            gui.updateEpochValidationScore(i, evaluation.accuracy());
         }
 
         log.info("*** Evaluate model ***");
@@ -203,4 +218,23 @@ public class ClassificationNetworkV1 {
         File saveLocation = new File("trained_qd_model.zip");
         ModelSerializer.writeModel(model, saveLocation, false);
     }
+
+    public CustomEventListener gui;
+
+    public class CustomScoreIterationListener extends ScoreIterationListener{
+        private int printIterations = 10;
+
+        public CustomScoreIterationListener(int printIterations) {
+            this.printIterations = printIterations;
+        }
+
+        @Override
+        public void iterationDone(Model model, int iteration, int epoch) {
+            super.iterationDone(model, iteration, epoch);
+            if (iteration % printIterations == 0) {
+                gui.updateRegressionScore(iteration, model.score());
+            }
+        }
+    }
+
 }
