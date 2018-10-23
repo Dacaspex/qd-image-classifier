@@ -45,14 +45,18 @@ public class ClassificationNetworkV1 {
     private static final int channels = 1;
 
     // Number of classes
-    private static final int numberOfClasses = 31;
+    private static final int numberOfClasses = 21;
 
     // Hyper parameters
-    private static final int batchSize = 256;
-    private static final int epochs = 20;
+    private static final int batchSize = 32;
+    private static final int epochs = 5;
 
     // Reload model and keep training or train new model
-    private static final boolean load_model = false;
+    private static final boolean load_model = true;
+
+    // Extra parameters
+    private static final boolean detailed_per_epoch_evaluation = true;
+    private static final boolean save_model_every_epoch = true;
 
     public void run() throws Exception {
         // Random seed for predictive results
@@ -175,46 +179,48 @@ public class ClassificationNetworkV1 {
 
         log.info("*** Training model ***");
 
+        Evaluation evaluation;
         for (int i = 0; i < epochs; i++) {
             model.fit(iterator);
             log.info("*** Epoch " + i + " Done ***");
 
-            Evaluation evaluation = new Evaluation(numberOfClasses);
-            ImageRecordReader recordReaderVal = new ImageRecordReader(height, width, channels, labelGenerator);
-            recordReaderVal.initialize(validation);
-            DataSetIterator testIterator = new RecordReaderDataSetIterator(recordReaderVal, batchSize, 1, numberOfClasses);
-            scaler.fit(testIterator);
-            testIterator.setPreProcessor(scaler);
-            while (testIterator.hasNext()) {
-                DataSet next = testIterator.next();
-                INDArray output = model.output(next.getFeatures());
-                evaluation.eval(next.getLabels(), output);
+            evaluation = runEvaluation(model, recordReader, validation, scaler);
+            if (detailed_per_epoch_evaluation) {
+                log.info(evaluation.stats(true, true));
             }
             gui.updateEpochValidationScore(i, evaluation.accuracy());
+
+            // Saving Model
+            if (save_model_every_epoch) saveModel(model);
         }
 
-        log.info("*** Evaluate model ***");
+        if (!detailed_per_epoch_evaluation) {
+            log.info("*** Evaluate model ***");
+            log.info(evaluation.stats(true, true));
+        }
 
+        if (!save_model_every_epoch) saveModel(model);
+    }
+
+    public Evaluation runEvaluation(MultiLayerNetwork model, ImageRecordReader recordReader, FileSplit validation, DataNormalization scaler) throws Exception{
+        log.info("*** Evaluate model ***");
         recordReader.reset();
         recordReader.initialize(validation);
-
         DataSetIterator testIterator = new RecordReaderDataSetIterator(recordReader, batchSize, 1, numberOfClasses);
         scaler.fit(testIterator);
         testIterator.setPreProcessor(scaler);
-
         // Create evaluation object
         Evaluation evaluation = new Evaluation(numberOfClasses);
-
         while (testIterator.hasNext()) {
             DataSet next = testIterator.next();
             INDArray output = model.output(next.getFeatures());
             evaluation.eval(next.getLabels(), output);
         }
+        return evaluation;
+    }
 
-        log.info(evaluation.stats(true, true));
-
+    public void saveModel(MultiLayerNetwork model) throws Exception{
         log.info("*** Saving model to 'trained_qd_model.zip' ***");
-
         File saveLocation = new File("trained_qd_model.zip");
         ModelSerializer.writeModel(model, saveLocation, false);
     }
