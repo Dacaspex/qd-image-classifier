@@ -33,6 +33,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.util.Random;
+import java.util.concurrent.TimeUnit;
 
 public class ClassificationNetworkV1 {
     private static final Logger log = LoggerFactory.getLogger(ClassificationNetworkV1.class);
@@ -75,16 +76,22 @@ public class ClassificationNetworkV1 {
         ParentPathLabelGenerator labelGenerator = new ParentPathLabelGenerator();
 
         // Record image reader
-        ImageRecordReader recordReader = new ImageRecordReader(height, width, channels, labelGenerator);
-        recordReader.initialize(training);
+        ImageRecordReader recordReaderTrain = new ImageRecordReader(height, width, channels, labelGenerator);
+        recordReaderTrain.initialize(training);
+        ImageRecordReader recordReaderValidate = new ImageRecordReader(height, width, channels, labelGenerator);
+        recordReaderValidate.initialize(validation);
 
         // Dataset iterator
-        DataSetIterator iterator = new RecordReaderDataSetIterator(recordReader, batchSize, 1, numberOfClasses);
+        DataSetIterator iteratorTrain = new RecordReaderDataSetIterator(recordReaderTrain, batchSize, 1, numberOfClasses);
+        DataSetIterator iteratorValidate = new RecordReaderDataSetIterator(recordReaderValidate, batchSize, 1, numberOfClasses);
 
         // Scale pixel values to [0, 1]
-        DataNormalization scaler = new ImagePreProcessingScaler(0, 1);
-        scaler.fit(iterator);
-        iterator.setPreProcessor(scaler);
+        DataNormalization scalerTrain = new ImagePreProcessingScaler(0, 1);
+        scalerTrain.fit(iteratorTrain);
+        iteratorTrain.setPreProcessor(scalerTrain);
+        DataNormalization scalerValidate = new ImagePreProcessingScaler(0, 1);
+        scalerValidate.fit(iteratorValidate);
+        iteratorValidate.setPreProcessor(scalerValidate);
 
         // Build our model
         MultiLayerNetwork model;
@@ -102,7 +109,7 @@ public class ClassificationNetworkV1 {
                     .layer(0, new Convolution2D.Builder(new int[]{4, 4}, new int[]{1, 1}, new int[]{0, 0})
                             .convolutionMode(ConvolutionMode.Same)
                             .nIn(1)
-                            .nOut(64)
+                            .nOut(96)
                             .weightInit(WeightInit.XAVIER_UNIFORM)
                             .activation(Activation.RELU)
                             .build())
@@ -116,7 +123,7 @@ public class ClassificationNetworkV1 {
                     ///////////
                     .layer(3, new Convolution2D.Builder(new int[]{3, 3}, new int[]{1, 1}, new int[]{0, 0})
                             .convolutionMode(ConvolutionMode.Same)
-                            .nOut(96)
+                            .nOut(128)
                             .weightInit(WeightInit.XAVIER_UNIFORM)
                             .activation(Activation.RELU)
                             .build())
@@ -130,7 +137,7 @@ public class ClassificationNetworkV1 {
                     ///////////
                     .layer(6, new Convolution2D.Builder(new int[]{2, 2}, new int[]{1, 1}, new int[]{0, 0})
                             .convolutionMode(ConvolutionMode.Same)
-                            .nOut(128)
+                            .nOut(160)
                             .weightInit(WeightInit.XAVIER_UNIFORM)
                             .activation(Activation.RELU)
                             .build())
@@ -143,7 +150,7 @@ public class ClassificationNetworkV1 {
                     //Layer 4//
                     ///////////
                     .layer(9, new DenseLayer.Builder()
-                            .nOut(2048)
+                            .nOut(2304)
                             .activation(new ActivationReLU())
                             .weightInit(WeightInit.XAVIER)
                             .build()
@@ -152,7 +159,7 @@ public class ClassificationNetworkV1 {
                             .dropOut(0.95)
                             .build())
                     .layer(11, new DenseLayer.Builder()
-                            .nOut(1024)
+                            .nOut(1152)
                             .activation(new ActivationReLU())
                             .weightInit(WeightInit.XAVIER)
                             .build()
@@ -175,23 +182,23 @@ public class ClassificationNetworkV1 {
         model.setIterationCount(1);
         model.init();
 
-        model.setListeners(new CustomScoreIterationListener(100));
+        model.setListeners(new CustomScoreIterationListener(300));
 
         log.info("*** Training model ***");
 
         Evaluation evaluation;
         for (int i = 0; i < epochs; i++) {
-            model.fit(iterator);
+            model.fit(iteratorTrain);
             log.info("*** Epoch " + i + " Done ***");
 
-            evaluation = runEvaluation(model, recordReader, validation, scaler);
+            evaluation = runEvaluation(model, recordReaderValidate, validation, scalerValidate);
             if (detailed_per_epoch_evaluation) {
                 log.info(evaluation.stats(true, true));
             }
             gui.updateEpochValidationScore(i, evaluation.accuracy());
 
             // Saving Model
-            if (save_model_every_epoch) saveModel(model);
+            if (save_model_every_epoch) saveModel(model, i);
         }
 
         if (!detailed_per_epoch_evaluation) {
@@ -199,7 +206,7 @@ public class ClassificationNetworkV1 {
             log.info(evaluation.stats(true, true));
         }
 
-        if (!save_model_every_epoch) saveModel(model);
+        if (!save_model_every_epoch) saveModel(model, epochs);
     }
 
     public Evaluation runEvaluation(MultiLayerNetwork model, ImageRecordReader recordReader, FileSplit validation, DataNormalization scaler) throws Exception{
@@ -219,9 +226,9 @@ public class ClassificationNetworkV1 {
         return evaluation;
     }
 
-    public void saveModel(MultiLayerNetwork model) throws Exception{
+    public void saveModel(MultiLayerNetwork model, int i) throws Exception{
         log.info("*** Saving model to 'trained_qd_model.zip' ***");
-        File saveLocation = new File("trained_qd_model.zip");
+        File saveLocation = new File("trained_qd_model" + i + ".zip");
         ModelSerializer.writeModel(model, saveLocation, false);
     }
 
